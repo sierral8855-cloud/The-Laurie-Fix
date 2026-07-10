@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Laurie Fix</title>
+  <meta name="description" content="Make AO3 EPUB covers display properly on Kobo Libra Colour." />
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    :root {
+      --bg: #15111b;
+      --bg-soft: #201827;
+      --panel: rgba(37, 28, 45, 0.92);
+      --panel-strong: #2b2034;
+      --ink: #f7f2fb;
+      --muted: #c9bbd4;
+      --accent: #b98adf;
+      --accent-2: #e6c8ff;
+      --line: rgba(230, 200, 255, 0.2);
+      --good: #c5f0d0;
+      --good-bg: rgba(74, 135, 93, 0.22);
+      --bad: #ffd0d0;
+      --bad-bg: rgba(151, 67, 67, 0.22);
+      --shadow: 0 28px 80px rgba(0,0,0,.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #f4efe8;
+      --bg-soft: #ede5f1;
+      --panel: rgba(255, 252, 248, 0.95);
+      --panel-strong: #fffaf5;
+      --ink: #2a2130;
+      --muted: #6d6174;
+      --accent: #6c4b86;
+      --accent-2: #4f3565;
+      --line: rgba(89, 66, 105, 0.18);
+      --good: #285f3d;
+      --good-bg: #e8f3eb;
+      --bad: #8b3737;
+      --bad-bg: #f7e8e8;
+      --shadow: 0 26px 70px rgba(64, 42, 75, .12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 10%, rgba(185,138,223,.22), transparent 22rem),
+        radial-gradient(circle at 85% 18%, rgba(103,76,133,.18), transparent 26rem),
+        linear-gradient(180deg, var(--bg-soft), var(--bg));
+      transition: background .25s ease, color .25s ease;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .25;
+      background-image:
+        radial-gradient(circle, rgba(255,255,255,.65) 0 1px, transparent 1.2px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 65%);
+    }
+
+    .shell {
+      width: min(860px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 28px 0 70px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 18px;
+    }
+
+    .theme-toggle {
+      width: auto;
+      margin: 0;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink);
+      background: rgba(255,255,255,.04);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+    }
+
+    .hero {
+      text-align: center;
+      padding: 28px 14px 34px;
+    }
+
+    .moon {
+      width: 66px;
+      height: 66px;
+      margin: 0 auto 18px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 35% 35%, #fff8d9 0 12%, #e8d1ff 13% 32%, #a16fc5 72%, #5a3e70 100%);
+      box-shadow:
+        0 0 0 10px rgba(185,138,223,.08),
+        0 0 42px rgba(185,138,223,.45);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: .78rem;
+      font-weight: 900;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2.8rem, 9.3vw, 6rem);
+      line-height: .92;
+      letter-spacing: -.05em;
+      text-wrap: balance;
+    }
+
+    .intro {
+      max-width: 640px;
+      margin: 22px auto 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+      line-height: 1.7;
+      text-wrap: balance;
+    }
+
+    .card {
+      padding: clamp(22px, 5vw, 42px);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .section-title {
+      margin: 0 0 18px;
+      font-family: Georgia, serif;
+      font-size: 1.5rem;
+    }
+
+    .steps {
+      display: grid;
+      gap: 14px;
+      margin: 0 0 28px;
+      padding: 0;
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .steps li {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr);
+      align-items: start;
+      gap: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .steps li > span,
+    .steps li > a {
+      grid-column: 2;
+    }
+
+    .steps li > span {
+      margin-top: 3px;
+    }
+
+    .tool-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: fit-content;
+      max-width: 100%;
+      margin-top: 10px;
+      padding: 11px 14px;
+      border-radius: 12px;
+      color: white;
+      background: linear-gradient(135deg, #8b5db0, #c79aeb);
+      text-decoration: none;
+      font-weight: 900;
+      box-shadow: 0 10px 24px rgba(92,57,116,.28);
+    }
+
+    .tool-link:hover {
+      transform: translateY(-1px);
+    }
+
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white;
+      font-weight: 900;
+      box-shadow: 0 8px 24px rgba(112,76,140,.28);
+    }
+
+    .steps strong { color: var(--ink); }
+
+    .dropzone {
+      display: block;
+      padding: 34px 20px;
+      border: 2px dashed rgba(185,138,223,.55);
+      border-radius: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: .18s ease;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015));
+    }
+
+    .dropzone:hover,
+    .dropzone.drag {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 14px 38px rgba(0,0,0,.18);
+    }
+
+    .drop-icon {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 2rem;
+    }
+
+    .dropzone strong {
+      display: block;
+      font-size: 1.12rem;
+    }
+
+    .dropzone span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+
+    input[type=file] { display: none; }
+
+    button.primary {
+      width: 100%;
+      margin-top: 16px;
+      padding: 16px 20px;
+      border: 0;
+      border-radius: 15px;
+      color: white;
+      background: linear-gradient(135deg, #925fc0, #d4a6f3);
+      font: inherit;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 16px 36px rgba(92, 57, 116, .28);
+      transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
+    }
+
+    button.primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 40px rgba(92, 57, 116, .36);
+    }
+
+    button.primary:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+      filter: saturate(.75);
+    }
+
+    #status { margin-top: 18px; }
+
+    .result {
+      margin-top: 10px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      border: 1px solid transparent;
+    }
+
+    .good {
+      background: var(--good-bg);
+      color: var(--good);
+      border-color: rgba(100,170,120,.25);
+    }
+
+    .bad {
+      background: var(--bad-bg);
+      color: var(--bad);
+      border-color: rgba(180,90,90,.2);
+    }
+
+    .selected {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: .93rem;
+      line-height: 1.5;
+    }
+
+    .success-banner {
+      margin-top: 16px;
+      padding: 18px;
+      border-radius: 18px;
+      background:
+        linear-gradient(135deg, rgba(185,138,223,.2), rgba(112,76,140,.1));
+      border: 1px solid rgba(185,138,223,.28);
+      text-align: center;
+      font-family: Georgia, serif;
+      font-size: 1.25rem;
+    }
+
+    footer {
+      margin-top: 28px;
+      color: var(--muted);
+      text-align: center;
+      font-size: .92rem;
+      line-height: 1.6;
+    }
+
+    .credit {
+      max-width: 620px;
+      margin: 10px auto 0;
+      font-size: .86rem;
+      opacity: .9;
+    }
+
+    .signature {
+      margin-top: 10px;
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    @media (max-width: 540px) {
+      .shell { width: min(100% - 16px, 860px); padding-top: 14px; }
+      .hero { padding: 8px 8px 28px; }
+      .moon { width: 58px; height: 58px; margin-bottom: 16px; }
+      .intro { font-size: 1rem; line-height: 1.62; }
+      .card { border-radius: 22px; padding: 22px 18px 28px; }
+      .steps { gap: 16px; }
+      .tool-link { width: 100%; }
+      .dropzone { padding: 28px 16px; }
+      footer { padding-inline: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <button class="theme-toggle" id="themeToggle" type="button">☀️ Light mode</button>
+    </div>
+
+    <header class="hero">
+      <div class="moon" aria-hidden="true"></div>
+      <p class="eyebrow">Kobo cover helper</p>
+      <h1>The Laurie Fix</h1>
+      <p class="intro">
+        For readers who believe an organized library should also be a pretty one.
+        This adds the real cover page Kobo expects after a cover has been added to an AO3 EPUB.
+      </p>
+    </header>
+
+    <main class="card">
+      <h2 class="section-title">Three steps. No snakes.</h2>
+
+      <ol class="steps">
+        <li>
+          <span>Add the cover first.</span>
+          <a class="tool-link" href="https://alexwlchan.net/my-tools/add-cover-to-ao3-epubs/" target="_blank" rel="noopener">
+            Open Alex Chan’s Cover Tool
+          </a>
+        </li>
+        <li>Choose the covered EPUB here. You may select several at once.</li>
+        <li>Download the new files ending in <strong>Kobo Ready</strong>, then place them in your Rakuten Kobo folder.</li>
+      </ol>
+
+      <label class="dropzone" id="dropzone" for="files">
+        <span class="drop-icon">📚</span>
+        <strong>Choose covered EPUBs</strong>
+        <span>Nothing is uploaded. The conversion happens in your browser.</span>
+      </label>
+
+      <input id="files" type="file" accept=".epub,application/epub+zip" multiple />
+      <p class="selected" id="selected">No books selected.</p>
+
+      <button class="primary" id="convert" disabled>Make Kobo-Ready Copies</button>
+
+      <div id="status" aria-live="polite"></div>
+    </main>
+
+    <footer>
+      Created because Laurie refused to accept ugly book covers.
+      <div class="credit">Built with the help of ChatGPT. Inspired by one reader who believed beautiful libraries matter.</div>
+      <div class="signature">Organized. Pretty. Fixed.</div>
+    </footer>
+  </div>
+
+<script>
+const input = document.getElementById('files');
+const button = document.getElementById('convert');
+const statusBox = document.getElementById('status');
+const selected = document.getElementById('selected');
+const dropzone = document.getElementById('dropzone');
+const themeToggle = document.getElementById('themeToggle');
+
+input.addEventListener('change', updateSelection);
+button.addEventListener('click', convertAll);
+themeToggle.addEventListener('click', toggleTheme);
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('laurie-fix-theme', theme);
+  themeToggle.textContent = theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  setTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+const savedTheme = localStorage.getItem('laurie-fix-theme');
+if (savedTheme) setTheme(savedTheme);
+
+['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e => {
+  e.preventDefault();
+  dropzone.classList.add('drag');
+}));
+
+['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+}));
+
+dropzone.addEventListener('drop', e => {
+  const transfer = new DataTransfer();
+  [...e.dataTransfer.files]
+    .filter(f => f.name.toLowerCase().endsWith('.epub'))
+    .forEach(f => transfer.items.add(f));
+  input.files = transfer.files;
+  updateSelection();
+});
+
+function updateSelection() {
+  const files = [...input.files];
+  button.disabled = files.length === 0;
+  selected.textContent = files.length
+    ? `${files.length} book${files.length === 1 ? '' : 's'} selected: ${files.map(f => f.name).join(', ')}`
+    : 'No books selected.';
+  statusBox.innerHTML = '';
+}
+
+function localName(tag) {
+  return tag.includes(':') ? tag.split(':').pop() : tag;
+}
+
+function findFirstByLocalName(root, name) {
+  return [...root.getElementsByTagName('*')].find(el => localName(el.tagName) === name) || null;
+}
+
+function findAllByLocalName(root, name) {
+  return [...root.getElementsByTagName('*')].filter(el => localName(el.tagName) === name);
+}
+
+function dirname(path) {
+  const i = path.lastIndexOf('/');
+  return i === -1 ? '' : path.slice(0, i);
+}
+
+function normalizePath(path) {
+  const parts = [];
+  path.replace(/\\/g, '/').split('/').forEach(part => {
+    if (!part || part === '.') return;
+    if (part === '..') parts.pop();
+    else parts.push(part);
+  });
+  return parts.join('/');
+}
+
+function joinPath(a, b) {
+  return normalizePath(a ? `${a}/${b}` : b);
+}
+
+function relativePath(fromDir, toPath) {
+  const from = normalizePath(fromDir).split('/').filter(Boolean);
+  const to = normalizePath(toPath).split('/').filter(Boolean);
+  while (from.length && to.length && from[0] === to[0]) {
+    from.shift();
+    to.shift();
+  }
+  return [...from.map(() => '..'), ...to].join('/') || '.';
+}
+
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 3 | 8);
+    return v.toString(16);
+  });
+}
+
+function safeFilename(name) {
+  return name.replace(/\.epub$/i, '') + ' - Kobo Ready.epub';
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function convertOne(file) {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+
+  const containerEntry = zip.file('META-INF/container.xml');
+  if (!containerEntry) throw new Error('This does not appear to be a valid EPUB.');
+
+  const parser = new DOMParser();
+  const serializer = new XMLSerializer();
+
+  const containerDoc = parser.parseFromString(
+    await containerEntry.async('text'),
+    'application/xml'
+  );
+
+  const rootfile = findFirstByLocalName(containerDoc, 'rootfile');
+  const opfPath = rootfile && rootfile.getAttribute('full-path');
+
+  if (!opfPath || !zip.file(opfPath)) {
+    throw new Error('Could not find the EPUB package file.');
+  }
+
+  const opfDoc = parser.parseFromString(
+    await zip.file(opfPath).async('text'),
+    'application/xml'
+  );
+
+  const packageEl = findFirstByLocalName(opfDoc, 'package');
+  const metadata = findFirstByLocalName(opfDoc, 'metadata');
+  const manifest = findFirstByLocalName(opfDoc, 'manifest');
+  const spine = findFirstByLocalName(opfDoc, 'spine');
+
+  if (!manifest || !spine) {
+    throw new Error('The EPUB is missing its manifest or reading order.');
+  }
+
+  const items = findAllByLocalName(manifest, 'item');
+
+  let coverItem = items.find(item =>
+    (item.getAttribute('properties') || '').split(/\s+/).includes('cover-image') ||
+    item.getAttribute('id') === 'cover-image'
+  );
+
+  if (!coverItem && metadata) {
+    const coverMeta = findAllByLocalName(metadata, 'meta')
+      .find(m => m.getAttribute('name') === 'cover');
+
+    const coverId = coverMeta && coverMeta.getAttribute('content');
+
+    if (coverId) {
+      coverItem = items.find(item => item.getAttribute('id') === coverId);
+    }
+  }
+
+  if (!coverItem) {
+    throw new Error("No cover image was found. Run the book through Alex's cover tool first.");
+  }
+
+  const opfDir = dirname(opfPath);
+  const coverHref = coverItem.getAttribute('href');
+  const coverPath = joinPath(opfDir, coverHref);
+
+  if (!zip.file(coverPath)) {
+    throw new Error('The cover image is referenced but missing.');
+  }
+
+  let pageName = 'cover.xhtml';
+  let pagePath = joinPath(opfDir, pageName);
+  let n = 2;
+  const hrefs = new Set(items.map(i => i.getAttribute('href')));
+
+  while (zip.file(pagePath) || hrefs.has(pageName)) {
+    pageName = `kobo-cover-${n++}.xhtml`;
+    pagePath = joinPath(opfDir, pageName);
+  }
+
+  const titleEl = metadata && findFirstByLocalName(metadata, 'title');
+  const title = (titleEl && titleEl.textContent.trim()) ||
+    file.name.replace(/\.epub$/i, '');
+
+  const relCover = relativePath(opfDir, coverPath);
+  const escapedTitle = title
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+
+  const xhtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<head>
+<title>Cover</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style type="text/css">
+html,body{margin:0;padding:0;width:100%;height:100%}
+body{text-align:center}
+img{width:100%;height:100%;object-fit:contain}
+</style>
+</head>
+<body><div><img src="${relCover}" alt="Cover for ${escapedTitle}"/></div></body>
+</html>`;
+
+  if (metadata && packageEl) {
+    const uid = packageEl.getAttribute('unique-identifier');
+
+    if (uid) {
+      const idEl = findAllByLocalName(metadata, 'identifier')
+        .find(el => el.getAttribute('id') === uid);
+
+      if (idEl) idEl.textContent = uuid();
+    }
+  }
+
+  const ns = packageEl
+    ? packageEl.namespaceURI
+    : 'http://www.idpf.org/2007/opf';
+
+  let pageId = 'kobo-cover-page';
+  let suffix = 2;
+  const ids = new Set(items.map(i => i.getAttribute('id')));
+
+  while (ids.has(pageId)) {
+    pageId = `kobo-cover-page-${suffix++}`;
+  }
+
+  const manifestItem = opfDoc.createElementNS(ns, 'item');
+  manifestItem.setAttribute('id', pageId);
+  manifestItem.setAttribute('href', pageName);
+  manifestItem.setAttribute('media-type', 'application/xhtml+xml');
+  manifest.appendChild(manifestItem);
+
+  const itemRef = opfDoc.createElementNS(ns, 'itemref');
+  itemRef.setAttribute('idref', pageId);
+  itemRef.setAttribute('linear', 'yes');
+  spine.insertBefore(itemRef, spine.firstChild);
+
+  let guide = findFirstByLocalName(opfDoc, 'guide');
+
+  if (!guide) {
+    guide = opfDoc.createElementNS(ns, 'guide');
+    packageEl.appendChild(guide);
+  }
+
+  findAllByLocalName(guide, 'reference')
+    .filter(ref => ref.getAttribute('type') === 'cover')
+    .forEach(ref => ref.remove());
+
+  const guideRef = opfDoc.createElementNS(ns, 'reference');
+  guideRef.setAttribute('type', 'cover');
+  guideRef.setAttribute('title', 'Cover');
+  guideRef.setAttribute('href', pageName);
+  guide.appendChild(guideRef);
+
+  zip.file(pagePath, xhtml);
+  zip.file(
+    opfPath,
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    serializer.serializeToString(opfDoc)
+  );
+
+  const output = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/epub+zip',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }
+  });
+
+  return {
+    blob: output,
+    name: safeFilename(file.name)
+  };
+}
+
+async function convertAll() {
+  const files = [...input.files];
+  if (!files.length) return;
+
+  button.disabled = true;
+  statusBox.innerHTML = '<div class="result good">Working on your books…</div>';
+
+  const messages = [];
+  let successCount = 0;
+
+  for (const file of files) {
+    try {
+      const result = await convertOne(file);
+      downloadBlob(result.blob, result.name);
+      successCount++;
+      messages.push(
+        `<div class="result good">✓ Created <strong>${result.name}</strong></div>`
+      );
+      await new Promise(r => setTimeout(r, 500));
+    } catch (err) {
+      messages.push(
+        `<div class="result bad">✗ <strong>${file.name}</strong>: ${err.message}</div>`
+      );
+    }
+  }
+
+  if (successCount > 0) {
+    messages.unshift(
+      `<div class="success-banner">✨ Your books are now Kobo Ready! ✨</div>`
+    );
+  }
+
+  statusBox.innerHTML = messages.join('');
+  button.disabled = false;
+}
+</script>
+</body>
+</html>
